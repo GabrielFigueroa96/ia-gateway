@@ -14,6 +14,8 @@ class Tenant extends Model
         'api_url',
         'url_admin',
         'api_secret',
+        'whatsapp_token',
+        'mensaje_fallback',
         'activo',
     ];
 }

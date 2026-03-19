@@ -57,15 +57,30 @@ class WebhookController extends Controller
             }
 
             // Reenviar el payload completo al API del negocio
-            $response = Http::withToken($tenant->api_secret)
-                ->timeout(30)
-                ->post($tenant->api_url, $body);
+            $apiOk = false;
+            try {
+                $response = Http::withToken($tenant->api_secret)
+                    ->timeout(30)
+                    ->post($tenant->api_url, $body);
 
-            if (!$response->successful()) {
-                Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$response->status()}", [
-                    'url'  => $tenant->api_url,
-                    'body' => $response->body(),
-                ]);
+                if ($response->successful()) {
+                    $apiOk = true;
+                } else {
+                    Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$response->status()}", [
+                        'url'  => $tenant->api_url,
+                        'body' => $response->body(),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::error("Gateway: API del tenant [{$tenant->nombre}] no respondió: {$e->getMessage()}");
+            }
+
+            // Si el API falló y hay fallback configurado, responder al cliente por WhatsApp
+            if (!$apiOk && $tenant->whatsapp_token && $tenant->mensaje_fallback) {
+                $from = data_get($value, 'messages.0.from');
+                if ($from) {
+                    $this->sendFallback($tenant, $from);
+                }
             }
 
         } catch (\Throwable $e) {
@@ -74,5 +89,21 @@ class WebhookController extends Controller
 
         // Siempre 200 a WhatsApp para que no reintente
         return response()->json(['status' => 'ok']);
+    }
+
+    private function sendFallback(object $tenant, string $to): void
+    {
+        try {
+            Http::withToken($tenant->whatsapp_token)
+                ->timeout(10)
+                ->post("https://graph.facebook.com/v19.0/{$tenant->phone_number_id}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'to'                => $to,
+                    'type'              => 'text',
+                    'text'              => ['body' => $tenant->mensaje_fallback],
+                ]);
+        } catch (\Throwable $e) {
+            Log::error("Gateway fallback: no se pudo enviar mensaje a {$to}: {$e->getMessage()}");
+        }
     }
 }
