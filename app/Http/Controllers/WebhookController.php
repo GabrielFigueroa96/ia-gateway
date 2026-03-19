@@ -57,9 +57,23 @@ class WebhookController extends Controller
                 return response()->json(['status' => 'ignored']);
             }
 
+            // ── Status updates (sent/delivered/read) ────────────────────────
+            // No crear nuevo log, solo actualizar el registro existente por wamid
+            if (!empty($value['statuses']) && empty($value['messages'])) {
+                foreach ($value['statuses'] as $status) {
+                    $wamidStatus = $status['id']     ?? null;
+                    $newStatus   = $status['status'] ?? null;
+                    if ($wamidStatus && $newStatus) {
+                        MessageLog::where('wamid', $wamidStatus)->update(['status' => $newStatus]);
+                    }
+                }
+                return response()->json(['status' => 'ok']);
+            }
+
             $from    = data_get($value, 'messages.0.from');
             $msgType = data_get($value, 'messages.0.type', 'unknown');
             $msgText = data_get($value, 'messages.0.text.body');
+            $wamid   = data_get($value, 'messages.0.id');
 
             // Reenviar el payload completo al API del negocio
             $apiOk     = false;
@@ -93,6 +107,7 @@ class WebhookController extends Controller
             MessageLog::create([
                 'tenant_id'     => $tenant->id,
                 'from'          => $from,
+                'wamid'         => $wamid,
                 'type'          => $msgType,
                 'message'       => $msgText,
                 'payload'       => $body,

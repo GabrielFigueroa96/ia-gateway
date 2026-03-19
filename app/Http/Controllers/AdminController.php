@@ -37,7 +37,7 @@ class AdminController extends Controller
     public function dashboard()
     {
         $tenants = Tenant::orderBy('nombre')->get();
-        $logs    = MessageLog::with('tenant')->latest()->limit(50)->get();
+        $logs    = MessageLog::with('tenant')->whereNotNull('from')->latest()->limit(50)->get();
         $stats   = [
             'total'   => MessageLog::count(),
             'hoy'     => MessageLog::whereDate('created_at', today())->count(),

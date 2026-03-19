@@ -216,7 +216,8 @@
                 <th>Desde</th>
                 <th>Tipo</th>
                 <th>Mensaje</th>
-                <th>Estado</th>
+                <th>Envío</th>
+                <th>Leído</th>
                 <th>Fecha</th>
             </tr>
         </thead>
@@ -232,6 +233,17 @@
                         <span class="ok">✓ OK</span>
                     @else
                         <span class="fail">✗ Error{{ $log->fallback_sent ? ' (fallback)' : '' }}</span>
+                    @endif
+                </td>
+                <td>
+                    @if($log->status === 'read')
+                        <span style="color:#60a5fa" title="Leído">✓✓ leído</span>
+                    @elseif($log->status === 'delivered')
+                        <span style="color:#94a3b8" title="Entregado">✓✓ entregado</span>
+                    @elseif($log->status === 'sent')
+                        <span style="color:#94a3b8" title="Enviado">✓ enviado</span>
+                    @else
+                        <span style="color:#334155">—</span>
                     @endif
                 </td>
                 <td class="ts">{{ $log->created_at->format('d/m H:i') }}</td>
