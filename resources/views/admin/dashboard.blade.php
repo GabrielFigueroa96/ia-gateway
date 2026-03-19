@@ -139,6 +139,20 @@
         .fail { color: #f87171; }
         .msg  { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
         .ts   { color: #475569; white-space: nowrap; }
+        .dir-in  { color: #4ade80; font-size: 11px; font-weight: 600; }
+        .dir-out { color: #60a5fa; font-size: 11px; font-weight: 600; }
+        .status-read      { color: #60a5fa; }
+        .status-delivered { color: #94a3b8; }
+        .status-sent      { color: #64748b; }
+        .btn-refresh {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #1e293b; border: 1px solid #334155;
+            color: #94a3b8; font-size: 13px; font-weight: 500;
+            padding: 7px 14px; border-radius: 8px; cursor: pointer;
+            transition: border-color 0.2s, color 0.2s; text-decoration: none;
+        }
+        .btn-refresh:hover { border-color: #25d366; color: #f1f5f9; }
+        .section-header { display: flex; align-items: center; justify-content: space-between; }
     </style>
 </head>
 <body>
@@ -205,31 +219,45 @@
         @endforelse
     </div>
 
-    <h3 class="section">Últimos mensajes</h3>
+    <div class="section-header">
+        <h3 class="section" style="margin:0">Últimos mensajes</h3>
+        <a href="{{ route('admin.dashboard') }}" class="btn-refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+            Actualizar
+        </a>
+    </div>
     @if($logs->isEmpty())
         <p style="color:#475569;font-size:14px">Sin mensajes registrados todavía.</p>
     @else
     <table>
         <thead>
             <tr>
+                <th></th>
                 <th>Negocio</th>
-                <th>Desde</th>
-                <th>Tipo</th>
+                <th>Teléfono</th>
                 <th>Mensaje</th>
-                <th>Envío</th>
-                <th>Leído</th>
+                <th>Envío API</th>
+                <th>Estado WA</th>
                 <th>Fecha</th>
             </tr>
         </thead>
         <tbody>
         @foreach($logs as $log)
             <tr>
+                <td>
+                    @if($log->type === 'outgoing')
+                        <span class="dir-out" title="Saliente (bot)">↑ bot</span>
+                    @else
+                        <span class="dir-in" title="Entrante (cliente)">↓ cliente</span>
+                    @endif
+                </td>
                 <td>{{ $log->tenant?->nombre ?? '—' }}</td>
                 <td style="font-family:monospace;font-size:12px">{{ $log->from ?? '—' }}</td>
-                <td>{{ $log->type }}</td>
-                <td class="msg">{{ $log->message ?? '(multimedia)' }}</td>
+                <td class="msg">{{ $log->message ?? ($log->type === 'outgoing' ? '(respuesta bot)' : '(multimedia)') }}</td>
                 <td>
-                    @if($log->api_ok)
+                    @if($log->type === 'outgoing')
+                        <span style="color:#475569">—</span>
+                    @elseif($log->api_ok)
                         <span class="ok">✓ OK</span>
                     @else
                         <span class="fail">✗ Error{{ $log->fallback_sent ? ' (fallback)' : '' }}</span>
@@ -237,11 +265,11 @@
                 </td>
                 <td>
                     @if($log->status === 'read')
-                        <span style="color:#60a5fa" title="Leído">✓✓ leído</span>
+                        <span class="status-read">✓✓ leído</span>
                     @elseif($log->status === 'delivered')
-                        <span style="color:#94a3b8" title="Entregado">✓✓ entregado</span>
+                        <span class="status-delivered">✓✓ entregado</span>
                     @elseif($log->status === 'sent')
-                        <span style="color:#94a3b8" title="Enviado">✓ enviado</span>
+                        <span class="status-sent">✓ enviado</span>
                     @else
                         <span style="color:#334155">—</span>
                     @endif

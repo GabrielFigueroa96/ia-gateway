@@ -19,3 +19,6 @@ use App\Http\Controllers\WebhookController;
 // WhatsApp llama a estas rutas
 Route::get ('/webhook', [WebhookController::class, 'verify']);
 Route::post('/webhook', [WebhookController::class, 'handle']);
+
+// Los tenants registran sus mensajes salientes (autenticado con GATEWAY_SECRET)
+Route::post('/log-outgoing', [WebhookController::class, 'logOutgoing']);

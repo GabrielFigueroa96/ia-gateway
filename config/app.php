@@ -44,7 +44,8 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
-    'admin_password' => env('ADMIN_PASSWORD', 'admin123'),
+    'admin_password'  => env('ADMIN_PASSWORD', 'admin123'),
+    'gateway_secret'  => env('GATEWAY_SECRET'),
 
     /*
     |--------------------------------------------------------------------------

@@ -37,11 +37,11 @@ class AdminController extends Controller
     public function dashboard()
     {
         $tenants = Tenant::orderBy('nombre')->get();
-        $logs    = MessageLog::with('tenant')->whereNotNull('from')->latest()->limit(50)->get();
+        $logs    = MessageLog::with('tenant')->whereNotNull('from')->latest()->limit(100)->get();
         $stats   = [
-            'total'   => MessageLog::count(),
-            'hoy'     => MessageLog::whereDate('created_at', today())->count(),
-            'errores' => MessageLog::whereDate('created_at', today())->where('api_ok', false)->count(),
+            'total'    => MessageLog::where('type', '!=', 'outgoing')->count(),
+            'hoy'      => MessageLog::where('type', '!=', 'outgoing')->whereDate('created_at', today())->count(),
+            'errores'  => MessageLog::whereDate('created_at', today())->where('api_ok', false)->where('type', '!=', 'outgoing')->count(),
         ];
         return view('admin.dashboard', compact('tenants', 'logs', 'stats'));
     }

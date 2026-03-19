@@ -58,13 +58,25 @@ class WebhookController extends Controller
             }
 
             // ── Status updates (sent/delivered/read) ────────────────────────
-            // No crear nuevo log, solo actualizar el registro existente por wamid
             if (!empty($value['statuses']) && empty($value['messages'])) {
                 foreach ($value['statuses'] as $status) {
-                    $wamidStatus = $status['id']     ?? null;
-                    $newStatus   = $status['status'] ?? null;
-                    if ($wamidStatus && $newStatus) {
-                        MessageLog::where('wamid', $wamidStatus)->update(['status' => $newStatus]);
+                    $wamidStatus = $status['id']          ?? null;
+                    $newStatus   = $status['status']      ?? null;
+                    $recipient   = $status['recipient_id'] ?? null;
+                    if (!$wamidStatus || !$newStatus) continue;
+
+                    $updated = MessageLog::where('wamid', $wamidStatus)->update(['status' => $newStatus]);
+
+                    // Si no existe el log (mensaje saliente del bot), crearlo
+                    if (!$updated) {
+                        MessageLog::create([
+                            'tenant_id' => $tenant->id,
+                            'from'      => $recipient,
+                            'wamid'     => $wamidStatus,
+                            'type'      => 'outgoing',
+                            'status'    => $newStatus,
+                            'api_ok'    => true,
+                        ]);
                     }
                 }
                 return response()->json(['status' => 'ok']);
@@ -121,6 +133,44 @@ class WebhookController extends Controller
         }
 
         // Siempre 200 a WhatsApp para que no reintente
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * POST /api/log-outgoing — El tenant registra un mensaje saliente con su wamid y texto.
+     * Autenticado con el mismo GATEWAY_SECRET que usa /api/handle.
+     */
+    public function logOutgoing(Request $request)
+    {
+        $secret = config('app.gateway_secret');
+        if ($secret && $request->bearerToken() !== $secret) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $phoneNumberId = $request->input('phone_number_id');
+        $tenant = Tenant::where('phone_number_id', $phoneNumberId)->where('activo', true)->first();
+        if (!$tenant) {
+            return response()->json(['error' => 'Unknown tenant'], 404);
+        }
+
+        $wamid = $request->input('wamid');
+
+        // Si ya existe (creado por un status update que llegó antes), solo actualizar texto
+        $existing = $wamid ? MessageLog::where('wamid', $wamid)->first() : null;
+        if ($existing) {
+            $existing->update(['message' => $request->input('message')]);
+        } else {
+            MessageLog::create([
+                'tenant_id' => $tenant->id,
+                'from'      => $request->input('to'),
+                'wamid'     => $wamid,
+                'type'      => 'outgoing',
+                'message'   => $request->input('message'),
+                'status'    => 'sent',
+                'api_ok'    => true,
+            ]);
+        }
+
         return response()->json(['status' => 'ok']);
     }
 
