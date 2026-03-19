@@ -115,6 +115,30 @@
             grid-column: 1 / -1;
         }
         .empty p { margin-top: 8px; font-size: 14px; }
+        .stats {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 16px 24px;
+            flex: 1;
+        }
+        .stat .num { font-size: 28px; font-weight: 700; }
+        .stat .lbl { color: #64748b; font-size: 13px; margin-top: 2px; }
+        .stat.error .num { color: #f87171; }
+        h3.section { font-size: 17px; margin: 32px 0 14px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: #64748b; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+        td { padding: 9px 12px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+        tr:hover td { background: #1e293b; }
+        .ok   { color: #4ade80; }
+        .fail { color: #f87171; }
+        .msg  { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
+        .ts   { color: #475569; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -129,7 +153,29 @@
 </header>
 
 <main>
-    <h2>Negocios conectados</h2>
+    <h2>WhatsApp Gateway</h2>
+    <p class="subtitle" style="margin-bottom:20px">Panel de control</p>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="num">{{ $stats['total'] }}</div>
+            <div class="lbl">Mensajes totales</div>
+        </div>
+        <div class="stat">
+            <div class="num">{{ $stats['hoy'] }}</div>
+            <div class="lbl">Mensajes hoy</div>
+        </div>
+        <div class="stat error">
+            <div class="num">{{ $stats['errores'] }}</div>
+            <div class="lbl">Errores hoy</div>
+        </div>
+        <div class="stat">
+            <div class="num">{{ $tenants->count() }}</div>
+            <div class="lbl">Negocios activos</div>
+        </div>
+    </div>
+
+    <h3 class="section">Negocios conectados</h3>
     <p class="subtitle">{{ $tenants->count() }} {{ $tenants->count() === 1 ? 'negocio registrado' : 'negocios registrados' }}</p>
 
     <div class="grid">
@@ -158,6 +204,42 @@
         </div>
         @endforelse
     </div>
+
+    <h3 class="section">Últimos mensajes</h3>
+    @if($logs->isEmpty())
+        <p style="color:#475569;font-size:14px">Sin mensajes registrados todavía.</p>
+    @else
+    <table>
+        <thead>
+            <tr>
+                <th>Negocio</th>
+                <th>Desde</th>
+                <th>Tipo</th>
+                <th>Mensaje</th>
+                <th>Estado</th>
+                <th>Fecha</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach($logs as $log)
+            <tr>
+                <td>{{ $log->tenant?->nombre ?? '—' }}</td>
+                <td style="font-family:monospace;font-size:12px">{{ $log->from ?? '—' }}</td>
+                <td>{{ $log->type }}</td>
+                <td class="msg">{{ $log->message ?? '(multimedia)' }}</td>
+                <td>
+                    @if($log->api_ok)
+                        <span class="ok">✓ OK</span>
+                    @else
+                        <span class="fail">✗ Error{{ $log->fallback_sent ? ' (fallback)' : '' }}</span>
+                    @endif
+                </td>
+                <td class="ts">{{ $log->created_at->format('d/m H:i') }}</td>
+            </tr>
+        @endforeach
+        </tbody>
+    </table>
+    @endif
 </main>
 </body>
 </html>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MessageLog;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -56,17 +57,24 @@ class WebhookController extends Controller
                 return response()->json(['status' => 'ignored']);
             }
 
+            $from    = data_get($value, 'messages.0.from');
+            $msgType = data_get($value, 'messages.0.type', 'unknown');
+            $msgText = data_get($value, 'messages.0.text.body');
+
             // Reenviar el payload completo al API del negocio
-            $apiOk = false;
+            $apiOk     = false;
+            $apiStatus = null;
             try {
-                $response = Http::withToken($tenant->api_secret)
+                $response  = Http::withToken($tenant->api_secret)
                     ->timeout(30)
                     ->post($tenant->api_url, $body);
+
+                $apiStatus = $response->status();
 
                 if ($response->successful()) {
                     $apiOk = true;
                 } else {
-                    Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$response->status()}", [
+                    Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$apiStatus}", [
                         'url'  => $tenant->api_url,
                         'body' => $response->body(),
                     ]);
@@ -76,12 +84,22 @@ class WebhookController extends Controller
             }
 
             // Si el API falló y hay fallback configurado, responder al cliente por WhatsApp
-            if (!$apiOk && $tenant->whatsapp_token && $tenant->mensaje_fallback) {
-                $from = data_get($value, 'messages.0.from');
-                if ($from) {
-                    $this->sendFallback($tenant, $from);
-                }
+            $fallbackSent = false;
+            if (!$apiOk && $tenant->whatsapp_token && $tenant->mensaje_fallback && $from) {
+                $fallbackSent = $this->sendFallback($tenant, $from);
             }
+
+            // Guardar log del mensaje
+            MessageLog::create([
+                'tenant_id'     => $tenant->id,
+                'from'          => $from,
+                'type'          => $msgType,
+                'message'       => $msgText,
+                'payload'       => $body,
+                'api_ok'        => $apiOk,
+                'api_status'    => $apiStatus,
+                'fallback_sent' => $fallbackSent,
+            ]);
 
         } catch (\Throwable $e) {
             Log::error("Gateway error: {$e->getMessage()}", ['exception' => $e]);
@@ -91,7 +109,7 @@ class WebhookController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
-    private function sendFallback(object $tenant, string $to): void
+    private function sendFallback(object $tenant, string $to): bool
     {
         try {
             Http::withToken($tenant->whatsapp_token)
@@ -102,8 +120,10 @@ class WebhookController extends Controller
                     'type'              => 'text',
                     'text'              => ['body' => $tenant->mensaje_fallback],
                 ]);
+            return true;
         } catch (\Throwable $e) {
             Log::error("Gateway fallback: no se pudo enviar mensaje a {$to}: {$e->getMessage()}");
+            return false;
         }
     }
 }

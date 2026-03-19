@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MessageLog;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
 
@@ -36,6 +37,12 @@ class AdminController extends Controller
     public function dashboard()
     {
         $tenants = Tenant::orderBy('nombre')->get();
-        return view('admin.dashboard', compact('tenants'));
+        $logs    = MessageLog::with('tenant')->latest()->limit(50)->get();
+        $stats   = [
+            'total'   => MessageLog::count(),
+            'hoy'     => MessageLog::whereDate('created_at', today())->count(),
+            'errores' => MessageLog::whereDate('created_at', today())->where('api_ok', false)->count(),
+        ];
+        return view('admin.dashboard', compact('tenants', 'logs', 'stats'));
     }
 }
