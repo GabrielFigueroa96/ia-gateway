@@ -44,6 +44,8 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    'admin_password' => env('ADMIN_PASSWORD', 'admin123'),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL
