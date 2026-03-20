@@ -167,6 +167,19 @@
         .status-delivered { color: #94a3b8; }
         .status-sent      { color: #64748b; }
 
+        .canal-wa  { color: #25d366; font-size: 14px; }
+        .canal-fb  { color: #1877f2; font-size: 14px; }
+        .canal-ig  { color: #e1306c; font-size: 14px; }
+
+        .canal-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+        .canal-tag {
+            font-size: 11px; font-weight: 600;
+            padding: 2px 8px; border-radius: 999px;
+        }
+        .canal-tag.wa { background: #14532d22; color: #25d366; border: 1px solid #25d36633; }
+        .canal-tag.fb { background: #1877f222; color: #60a5fa; border: 1px solid #1877f233; }
+        .canal-tag.ig { background: #e1306c22; color: #f472b6; border: 1px solid #e1306c33; }
+
         /* Mostrar tabla en desktop, cards en mobile */
         .show-mobile { display: block; }
         .show-desktop { display: none; }
@@ -225,7 +238,19 @@
             <div class="tipo">
                 <span>🤖 {{ $tenant->tipo_ia }}</span>
             </div>
-            <div class="phone">ID: {{ $tenant->phone_number_id }}</div>
+            <div class="canal-tags">
+                @if($tenant->phone_number_id)
+                    <span class="canal-tag wa">WhatsApp</span>
+                @endif
+                @if($tenant->page_id)
+                    <span class="canal-tag fb">Messenger</span>
+                    <span class="canal-tag ig">Instagram</span>
+                @endif
+            </div>
+            <div class="phone" style="margin-top:4px">
+                @if($tenant->phone_number_id) WA: {{ $tenant->phone_number_id }}<br>@endif
+                @if($tenant->page_id) Page: {{ $tenant->page_id }}@endif
+            </div>
             @if($tenant->url_admin)
                 <a href="{{ $tenant->url_admin }}" target="_blank" class="btn">Ir al admin →</a>
             @else
@@ -266,6 +291,13 @@
                     @else
                         <span class="dir-in">↓ cliente</span>
                     @endif
+                    @if(($log->canal ?? 'whatsapp') === 'messenger')
+                        <span class="canal-fb" title="Messenger">💬</span>
+                    @elseif(($log->canal ?? 'whatsapp') === 'instagram')
+                        <span class="canal-ig" title="Instagram">📸</span>
+                    @else
+                        <span class="canal-wa" title="WhatsApp">📱</span>
+                    @endif
                     <span style="font-size:13px;font-weight:600">{{ $log->tenant?->nombre ?? '—' }}</span>
                 </div>
                 <span class="ts" style="font-size:11px">{{ $log->created_at->format('d/m H:i') }}</span>
@@ -298,11 +330,12 @@
         <thead>
             <tr>
                 <th></th>
+                <th></th>
                 <th>Negocio</th>
-                <th>Teléfono</th>
+                <th>Teléfono / ID</th>
                 <th>Mensaje</th>
                 <th>Envío API</th>
-                <th>Estado WA</th>
+                <th>Estado</th>
                 <th>Fecha</th>
             </tr>
         </thead>
@@ -314,6 +347,15 @@
                         <span class="dir-out">↑ bot</span>
                     @else
                         <span class="dir-in">↓ cliente</span>
+                    @endif
+                </td>
+                <td>
+                    @if(($log->canal ?? 'whatsapp') === 'messenger')
+                        <span class="canal-fb" title="Messenger">💬</span>
+                    @elseif(($log->canal ?? 'whatsapp') === 'instagram')
+                        <span class="canal-ig" title="Instagram">📸</span>
+                    @else
+                        <span class="canal-wa" title="WhatsApp">📱</span>
                     @endif
                 </td>
                 <td>{{ $log->tenant?->nombre ?? '—' }}</td>

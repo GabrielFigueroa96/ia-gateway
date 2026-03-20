@@ -11,6 +11,7 @@ class MessageLog extends Model
 
     protected $fillable = [
         'tenant_id',
+        'canal',
         'from',
         'wamid',
         'status',

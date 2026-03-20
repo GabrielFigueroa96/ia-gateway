@@ -155,6 +155,7 @@ class WebhookController extends Controller
 
         MessageLog::create([
             'tenant_id'     => $tenant->id,
+            'canal'         => 'whatsapp',
             'from'          => $from,
             'wamid'         => $wamid,
             'type'          => $msgType,
@@ -194,6 +195,7 @@ class WebhookController extends Controller
 
         MessageLog::create([
             'tenant_id'  => $tenant->id,
+            'canal'      => $canal,
             'from'       => $from,
             'wamid'      => $mid,
             'type'       => 'text',
