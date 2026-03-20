@@ -35,111 +35,34 @@ class WebhookController extends Controller
     }
 
     /**
-     * POST — Llega un mensaje de WhatsApp.
-     * Identifica el negocio por phone_number_id y reenvía al API correspondiente.
+     * POST — Llega un mensaje de WhatsApp, Messenger o Instagram.
+     * Detecta el canal por el campo "object", identifica el tenant y reenvía al API correspondiente.
      */
     public function handle(Request $request)
     {
         try {
-            $body          = $request->json()->all();
-            $value         = data_get($body, 'entry.0.changes.0.value');
-            $phoneNumberId = data_get($value, 'metadata.phone_number_id');
+            $body   = $request->json()->all();
+            $object = $body['object'] ?? null;
 
-            if (!$phoneNumberId) {
-                return response()->json(['status' => 'ignored']);
+            // ── Messenger / Instagram ────────────────────────────────────────
+            if ($object === 'page' || $object === 'instagram') {
+                return $this->handleMessenger($body, $object);
             }
 
-            $tenant = Cache::remember("tenant_phone_{$phoneNumberId}", 300, fn() =>
-                Tenant::where('phone_number_id', $phoneNumberId)->where('activo', true)->first()
-            );
-
-            if (!$tenant) {
-                Log::warning("Gateway: phone_number_id sin tenant [{$phoneNumberId}]");
-                return response()->json(['status' => 'ignored']);
-            }
-
-            // ── Status updates (sent/delivered/read) ────────────────────────
-            if (!empty($value['statuses']) && empty($value['messages'])) {
-                foreach ($value['statuses'] as $status) {
-                    $wamidStatus = $status['id']          ?? null;
-                    $newStatus   = $status['status']      ?? null;
-                    $recipient   = $status['recipient_id'] ?? null;
-                    if (!$wamidStatus || !$newStatus) continue;
-
-                    $updated = MessageLog::where('wamid', $wamidStatus)->update(['status' => $newStatus]);
-
-                    // Si no existe el log (mensaje saliente del bot), crearlo
-                    if (!$updated) {
-                        MessageLog::create([
-                            'tenant_id' => $tenant->id,
-                            'from'      => $recipient,
-                            'wamid'     => $wamidStatus,
-                            'type'      => 'outgoing',
-                            'status'    => $newStatus,
-                            'api_ok'    => true,
-                        ]);
-                    }
-                }
-                return response()->json(['status' => 'ok']);
-            }
-
-            $from    = data_get($value, 'messages.0.from');
-            $msgType = data_get($value, 'messages.0.type', 'unknown');
-            $msgText = data_get($value, 'messages.0.text.body');
-            $wamid   = data_get($value, 'messages.0.id');
-
-            // Reenviar el payload completo al API del negocio
-            $apiOk     = false;
-            $apiStatus = null;
-            try {
-                $response  = Http::withToken($tenant->api_secret)
-                    ->timeout(30)
-                    ->post($tenant->api_url, $body);
-
-                $apiStatus = $response->status();
-
-                if ($response->successful()) {
-                    $apiOk = true;
-                } else {
-                    Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$apiStatus}", [
-                        'url'  => $tenant->api_url,
-                        'body' => $response->body(),
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Log::error("Gateway: API del tenant [{$tenant->nombre}] no respondió: {$e->getMessage()}");
-            }
-
-            // Si el API falló y hay fallback configurado, responder al cliente por WhatsApp
-            $fallbackSent = false;
-            if (!$apiOk && $tenant->whatsapp_token && $tenant->mensaje_fallback && $from) {
-                $fallbackSent = $this->sendFallback($tenant, $from);
-            }
-
-            // Guardar log del mensaje
-            MessageLog::create([
-                'tenant_id'     => $tenant->id,
-                'from'          => $from,
-                'wamid'         => $wamid,
-                'type'          => $msgType,
-                'message'       => $msgText,
-                'payload'       => $body,
-                'api_ok'        => $apiOk,
-                'api_status'    => $apiStatus,
-                'fallback_sent' => $fallbackSent,
-            ]);
+            // ── WhatsApp Business ────────────────────────────────────────────
+            return $this->handleWhatsapp($body);
 
         } catch (\Throwable $e) {
             Log::error("Gateway error: {$e->getMessage()}", ['exception' => $e]);
         }
 
-        // Siempre 200 a WhatsApp para que no reintente
         return response()->json(['status' => 'ok']);
     }
 
+    // ── Log de mensajes salientes (registrado por el tenant) ─────────────────
+
     /**
      * POST /api/log-outgoing — El tenant registra un mensaje saliente con su wamid y texto.
-     * Autenticado con el mismo GATEWAY_SECRET que usa /api/handle.
      */
     public function logOutgoing(Request $request)
     {
@@ -156,7 +79,6 @@ class WebhookController extends Controller
 
         $wamid = $request->input('wamid');
 
-        // Si ya existe (creado por un status update que llegó antes), solo actualizar texto
         $existing = $wamid ? MessageLog::where('wamid', $wamid)->first() : null;
         if ($existing) {
             $existing->update(['message' => $request->input('message')]);
@@ -173,6 +95,147 @@ class WebhookController extends Controller
         }
 
         return response()->json(['status' => 'ok']);
+    }
+
+    // ── Procesamiento por canal ──────────────────────────────────────────────
+
+    private function handleWhatsapp(array $body): \Illuminate\Http\JsonResponse
+    {
+        $value         = data_get($body, 'entry.0.changes.0.value');
+        $phoneNumberId = data_get($value, 'metadata.phone_number_id');
+
+        if (!$phoneNumberId) {
+            return response()->json(['status' => 'ignored']);
+        }
+
+        $tenant = Cache::remember("tenant_phone_{$phoneNumberId}", 300, fn() =>
+            Tenant::where('phone_number_id', $phoneNumberId)->where('activo', true)->first()
+        );
+
+        if (!$tenant) {
+            Log::warning("Gateway: phone_number_id sin tenant [{$phoneNumberId}]");
+            return response()->json(['status' => 'ignored']);
+        }
+
+        // Status updates (sent/delivered/read)
+        if (!empty($value['statuses']) && empty($value['messages'])) {
+            foreach ($value['statuses'] as $status) {
+                $wamidStatus = $status['id']          ?? null;
+                $newStatus   = $status['status']      ?? null;
+                $recipient   = $status['recipient_id'] ?? null;
+                if (!$wamidStatus || !$newStatus) continue;
+
+                $updated = MessageLog::where('wamid', $wamidStatus)->update(['status' => $newStatus]);
+
+                if (!$updated) {
+                    MessageLog::create([
+                        'tenant_id' => $tenant->id,
+                        'from'      => $recipient,
+                        'wamid'     => $wamidStatus,
+                        'type'      => 'outgoing',
+                        'status'    => $newStatus,
+                        'api_ok'    => true,
+                    ]);
+                }
+            }
+            return response()->json(['status' => 'ok']);
+        }
+
+        $from    = data_get($value, 'messages.0.from');
+        $msgType = data_get($value, 'messages.0.type', 'unknown');
+        $msgText = data_get($value, 'messages.0.text.body');
+        $wamid   = data_get($value, 'messages.0.id');
+
+        [$apiOk, $apiStatus] = $this->forwardToTenant($tenant, $body, 'whatsapp');
+
+        $fallbackSent = false;
+        if (!$apiOk && $tenant->whatsapp_token && $tenant->mensaje_fallback && $from) {
+            $fallbackSent = $this->sendFallback($tenant, $from);
+        }
+
+        MessageLog::create([
+            'tenant_id'     => $tenant->id,
+            'from'          => $from,
+            'wamid'         => $wamid,
+            'type'          => $msgType,
+            'message'       => $msgText,
+            'payload'       => $body,
+            'api_ok'        => $apiOk,
+            'api_status'    => $apiStatus,
+            'fallback_sent' => $fallbackSent,
+        ]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleMessenger(array $body, string $object): \Illuminate\Http\JsonResponse
+    {
+        $pageId = data_get($body, 'entry.0.id');
+
+        if (!$pageId) {
+            return response()->json(['status' => 'ignored']);
+        }
+
+        $tenant = Cache::remember("tenant_page_{$pageId}", 300, fn() =>
+            Tenant::where('page_id', $pageId)->where('activo', true)->first()
+        );
+
+        if (!$tenant) {
+            Log::warning("Gateway: page_id sin tenant [{$pageId}] (canal: {$object})");
+            return response()->json(['status' => 'ignored']);
+        }
+
+        $canal   = $object === 'instagram' ? 'instagram' : 'messenger';
+        $from    = data_get($body, 'entry.0.messaging.0.sender.id');
+        $msgText = data_get($body, 'entry.0.messaging.0.message.text');
+        $mid     = data_get($body, 'entry.0.messaging.0.message.mid');
+
+        [$apiOk, $apiStatus] = $this->forwardToTenant($tenant, $body, $canal);
+
+        MessageLog::create([
+            'tenant_id'  => $tenant->id,
+            'from'       => $from,
+            'wamid'      => $mid,
+            'type'       => 'text',
+            'message'    => $msgText,
+            'payload'    => $body,
+            'api_ok'     => $apiOk,
+            'api_status' => $apiStatus,
+        ]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Reenvía el payload al API del tenant con el header X-Canal.
+     * Devuelve [$apiOk, $apiStatus].
+     */
+    private function forwardToTenant(object $tenant, array $body, string $canal): array
+    {
+        try {
+            $response = Http::withToken($tenant->api_secret)
+                ->withHeaders(['X-Canal' => $canal])
+                ->timeout(30)
+                ->post($tenant->api_url, $body);
+
+            $apiStatus = $response->status();
+
+            if ($response->successful()) {
+                return [true, $apiStatus];
+            }
+
+            Log::error("Gateway: API del tenant [{$tenant->nombre}] respondió {$apiStatus}", [
+                'url'  => $tenant->api_url,
+                'body' => $response->body(),
+            ]);
+            return [false, $apiStatus];
+
+        } catch (\Throwable $e) {
+            Log::error("Gateway: API del tenant [{$tenant->nombre}] no respondió: {$e->getMessage()}");
+            return [false, null];
+        }
     }
 
     private function sendFallback(object $tenant, string $to): bool
