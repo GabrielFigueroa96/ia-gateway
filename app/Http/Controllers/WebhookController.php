@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MessageLog;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -48,9 +49,9 @@ class WebhookController extends Controller
                 return response()->json(['status' => 'ignored']);
             }
 
-            $tenant = Tenant::where('phone_number_id', $phoneNumberId)
-                ->where('activo', true)
-                ->first();
+            $tenant = Cache::remember("tenant_phone_{$phoneNumberId}", 300, fn() =>
+                Tenant::where('phone_number_id', $phoneNumberId)->where('activo', true)->first()
+            );
 
             if (!$tenant) {
                 Log::warning("Gateway: phone_number_id sin tenant [{$phoneNumberId}]");
